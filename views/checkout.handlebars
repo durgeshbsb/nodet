@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Pay Now</title>
+    <script src="https://js.stripe.com/v3/"></script>
+    <style>
+        body {
+            font-family: Arial;
+            max-width: 420px;
+            margin: 40px auto;
+        }
+
+        #payment-element {
+            margin-bottom: 20px;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>Complete Payment</h2>
+
+    <form id="payment-form">
+        <div id="payment-element"></div>
+        <button id="submit">Pay</button>
+    </form>
+
+    <div id="error-message"></div>
+
+    <script>
+        const stripe = Stripe("{{stripeKey}}");
+
+        async function init() {
+            const res = await fetch('/api/stripe/create-payment-intent', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ amount: 500 }) // ₹500
+            });
+
+            const { clientSecret } = await res.json();
+
+            const elements = stripe.elements({ clientSecret });
+
+            const paymentElement = elements.create('payment');
+            paymentElement.mount('#payment-element');
+
+            const form = document.getElementById('payment-form');
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const { error } = await stripe.confirmPayment({
+                    elements,
+                    confirmParams: {
+                        return_url: 'http://localhost:7767/api/stripe/success',
+                    },
+                });
+
+                if (error) {
+                    document.getElementById('error-message').innerText = error.message;
+                }
+            });
+        }
+
+        init();
+    </script>
+
+</body>
+
+</html>
