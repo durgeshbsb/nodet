@@ -297,7 +297,8 @@ ${validNews.map(n => `Title: ${n.title}\n${n.content}`).join("\n\n")}
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                model: "deepseek-ai/DeepSeek-R1:novita",
+                // model: "deepseek-ai/DeepSeek-R1:novita",
+                model: "ProsusAI/finbert",
                 messages: [{ role: "user", content: prompt }],
                 stream: false
             })
