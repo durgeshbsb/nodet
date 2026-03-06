@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Stock News AI Analyzer</title>
+
+    <style>
+        body {
+            font-family: Arial;
+            background: #f5f7fb;
+            padding: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 10px;
+        }
+
+        th {
+            background: #2c3e50;
+            color: white;
+        }
+
+        .buy {
+            color: green;
+            font-weight: bold;
+        }
+
+        .strongbuy {
+            color: darkgreen;
+            font-weight: bold;
+        }
+
+        .sell {
+            color: red;
+            font-weight: bold;
+        }
+
+        .strongsell {
+            color: darkred;
+            font-weight: bold;
+        }
+
+        .hold {
+            color: orange;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>Stock News Analyzer</h2>
+
+    <button onclick="loadNews()">Load News</button>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Headline</th>
+                <th>Description</th>
+                <th>Signal</th>
+            </tr>
+        </thead>
+
+        <tbody id="newsTable"></tbody>
+
+    </table>
+
+    <script>
+
+        async function loadNews() {
+
+            const response = await fetch(
+                "https://app1.whalesbook1.shop/published-news-collection/v2/free",
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        date: "2026-03-06",
+                        page: 1,
+                        limit: 12,
+                        sector: "All",
+                        language: "English"
+                    })
+                });
+
+            const json = await response.json();
+
+            json.data.forEach(news => {
+
+                let text = (news.headline + " " + news.shortDescription).toLowerCase();
+
+                let signal = analyze(text);
+
+                addRow(news.headline, news.shortDescription, signal);
+
+            });
+
+        }
+
+        function analyze(text) {
+
+            let score = 0;
+
+            const positive = [
+                "growth", "profit", "gain", "bullish", "record", "deal",
+                "expansion", "surge", "strong", "optimism", "increase"
+            ];
+
+            const negative = [
+                "decline", "loss", "fall", "bearish", "drop",
+                "slump", "crisis", "weak", "risk", "concern"
+            ];
+
+            positive.forEach(w => {
+                if (text.includes(w)) score++;
+            });
+
+            negative.forEach(w => {
+                if (text.includes(w)) score--;
+            });
+
+            if (score >= 3) return "Strong Buy";
+            if (score == 2) return "Buy";
+            if (score == 1) return "Hold";
+            if (score == 0) return "Hold";
+            if (score == -1) return "Sell";
+            return "Strong Sell";
+
+        }
+
+        function addRow(headline, desc, signal) {
+
+            let cls = "hold";
+
+            if (signal == "Strong Buy") cls = "strongbuy";
+            if (signal == "Buy") cls = "buy";
+            if (signal == "Sell") cls = "sell";
+            if (signal == "Strong Sell") cls = "strongsell";
+
+            let tr = document.createElement("tr");
+
+            tr.innerHTML = `
+<td>${headline}</td>
+<td>${desc}</td>
+<td class="${cls}">${signal}</td>
+`;
+
+            document.getElementById("newsTable").appendChild(tr);
+
+        }
+
+    </script>
+
+</body>
+
+</html>

@@ -41,7 +41,7 @@
             const res = await fetch('/api/stripe/create-payment-intent', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ amount: 500 }) // ₹500
+                body: JSON.stringify({ amount: 500, userId: 1 }) // ₹500
             });
 
             const { clientSecret } = await res.json();

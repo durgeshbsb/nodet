@@ -1,5 +1,5 @@
 import './bootstrap.js'; // ✅ MUST be first, no variables before this
-
+import cors from "cors";
 
 import express from 'express';
 import rateLimit from "express-rate-limit";
@@ -19,8 +19,10 @@ app.use(express.static('public'));
 // IMPORTANT: webhook uses raw body
 app.use('/webhooks/stripe', express.raw({ type: 'application/json' }));
 import stripeRoutes from './routes/stripe.route.js';
+import stockRoutes from './routes/stock.route.js';
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
+app.use(cors());
 app.use(express.json());
 const PORT = process.env.PORT || 4568;
 const JWT_SECRET = "my_super_secret_key"; // Use env variable in production
@@ -36,7 +38,9 @@ const limiter = rateLimit({
 // Apply to all requests
 app.use(limiter);
 
+
 app.use('/api/stripe', stripeRoutes);
+app.use('/api/stocks', stockRoutes);
 
 // Fake database
 const users = [];

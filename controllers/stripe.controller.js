@@ -14,155 +14,82 @@ export const testStripe = async (req, res) => {
         console.log('PaymentIntent created:', paymentIntent.id);
         res.json({ success: true, message: "PaymentIntent created", data: paymentIntent });
     } catch (error) {
-        res.status(500).json({ success: false, message: err.message });
+        res.status(500).json({ success: false, message: error.message });
     }
 }
 
-// export const createSubscription = async (req, res) => {
-//     const { email, paymentMethodId, priceId } = req.body;
-
-//     try {
-//         // 1. Create customer
-//         const customer = await stripe.customers.create({
-//             email,
-//             payment_method: paymentMethodId,
-//             invoice_settings: {
-//                 default_payment_method: paymentMethodId,
-//             },
-//         });
-
-//         // 2. Create subscription
-//         const subscription = await stripe.subscriptions.create({
-//             customer: customer.id,
-//             items: [{ price: priceId }],
-//             payment_settings: {
-//                 payment_method_types: ['card'],
-//             },
-//             expand: ['latest_invoice.payment_intent'],
-//         });
-
-//         res.json(subscription);
-//     } catch (err) {
-//         res.status(500).json({ error: err.message });
-//     }
-// };
-
-// export const createSubscription = async (req, res) => {
-//     const { userId, email, paymentMethodId, priceId } = req.body;
-
-//     // 1. Create Stripe Customer
-//     const customer = await stripe.customers.create({
-//         email,
-//         payment_method: paymentMethodId,
-//         invoice_settings: {
-//             default_payment_method: paymentMethodId,
-//         },
-//     });
-
-//     await db.query(
-//         'UPDATE users SET stripe_customer_id=? WHERE id=?',
-//         [customer.id, userId]
-//     );
-
-//     // 2. Create Subscription
-//     const subscription = await stripe.subscriptions.create({
-//         customer: customer.id,
-//         items: [{ price: priceId }],
-//         payment_behavior: 'default_incomplete',
-//         expand: ['latest_invoice.payment_intent'],
-//     });
-
-//     // 3. Save subscription
-//     await db.query(
-//         `INSERT INTO subscriptions 
-//      (user_id, stripe_subscription_id, status, current_period_end)
-//      VALUES (?, ?, ?, FROM_UNIXTIME(?))`,
-//         [
-//             userId,
-//             subscription.id,
-//             subscription.status,
-//             subscription.current_period_end,
-//         ]
-//     );
-
-//     res.json({
-//         clientSecret:
-//             subscription.latest_invoice.payment_intent.client_secret,
-//     });
-// };
 
 export const createSubscription = async (req, res) => {
-    const { userId, email, plan } = req.body;
+    try {
+        const { userId, email, plan } = req.body;
 
-    const PRICE_IDS = {
-        basic: 'price_1T2mtl2cXaszDcHdG9wLQhND',
-        pro: 'price_456',
-    };
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'User ID is required.' });
+        }
 
-    const priceId = PRICE_IDS[plan];
+        const PRICE_IDS = {
+            basic: process.env.STRIPE_PRICE_BASIC,
+            pro: process.env.STRIPE_PRICE_PRO,
+        };
 
-    // 1. Create customer
-    const customer = await stripe.customers.create({
-        email,
-    });
+        if (!PRICE_IDS[plan]) {
+            return res.status(400).json({ success: false, message: 'Invalid plan selected.' });
+        }
 
-    await db.query(
-        'UPDATE users SET stripe_customer_id=? WHERE id=?',
-        [customer.id, userId]
-    );
+        // 1️⃣ Get or create customer
+        const [[user]] = await db.query(
+            'SELECT stripe_customer_id FROM users WHERE id=?',
+            [userId]
+        );
 
-    // 2. Create subscription (incomplete)
-    const subscription = await stripe.subscriptions.create({
-        customer: customer.id,
-        items: [{ price: priceId }],
-        payment_behavior: 'default_incomplete',
-        payment_settings: {
-            save_default_payment_method: 'on_subscription',
-        },
-        expand: ['latest_invoice.payment_intent'],
-    });
+        let customerId = user?.stripe_customer_id; // Use optional chaining to safely access property
 
-    res.json({
-        clientSecret:
-            subscription.latest_invoice.payment_intent.client_secret,
-    });
+        if (!customerId) {
+            const customer = await stripe.customers.create({ email });
+            customerId = customer.id;
+
+            await db.query(
+                'UPDATE users SET stripe_customer_id=? WHERE id=?',
+                [customerId, userId]
+            );
+        }
+
+        // 2️⃣ Create subscription
+        const subscription = await stripe.subscriptions.create({
+            customer: customerId,
+            items: [{ price: PRICE_IDS[plan] }],
+            payment_behavior: 'default_incomplete',
+            payment_settings: {
+                save_default_payment_method: 'on_subscription',
+            },
+            expand: ['latest_invoice.payment_intent'],
+            metadata: { userId, plan },
+        });
+
+        // 3️⃣ Save subscription as pending
+        await db.query(
+            `INSERT INTO subscriptions 
+         (user_id, stripe_subscription_id, status)
+         VALUES (?, ?, 'pending')`,
+            [userId, subscription.id]
+        );
+
+        res.json({
+            clientSecret:
+                subscription.latest_invoice.payment_intent.client_secret,
+        });
+    } catch (error) {
+        console.error('Error in createSubscription:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
 };
 
 
 
-
-// export const stripeWebhook = async (req, res) => {
-//     const sig = req.headers['stripe-signature'];
-
-//     let event;
-//     try {
-//         event = stripe.webhooks.constructEvent(
-//             req.body,
-//             sig,
-//             process.env.STRIPE_WEBHOOK_SECRET
-//         );
-//     } catch (err) {
-//         return res.status(400).send(`Webhook Error: ${err.message}`);
-//     }
-
-//     if (event.type === 'payment_intent.succeeded') {
-//         const intent = event.data.object;
-//         console.log('✅ Payment succeeded:', intent.id);
-//         // update DB, mark order paid
-//     }
-
-//     if (event.type === 'invoice.payment_failed') {
-//         console.log('❌ Subscription payment failed');
-//         // notify user, retry logic
-//     }
-
-//     res.json({ received: true });
-// };
-
 export const stripeWebhook = async (req, res) => {
     const sig = req.headers['stripe-signature'];
-
     let event;
+
     try {
         event = stripe.webhooks.constructEvent(
             req.body,
@@ -173,13 +100,33 @@ export const stripeWebhook = async (req, res) => {
         return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
+    // 🔹 ONE-TIME PAYMENT SUCCESS
+    if (event.type === 'payment_intent.succeeded') {
+        const pi = event.data.object;
+
+        await db.query(
+            `UPDATE payments
+       SET status='paid'
+       WHERE stripe_payment_intent_id=?`,
+            [pi.id]
+        );
+    }
+
+    // 🔹 SUBSCRIPTION PAYMENT SUCCESS
     if (event.type === 'invoice.payment_succeeded') {
         const invoice = event.data.object;
 
         await db.query(
-            `INSERT INTO invoices 
-     (stripe_invoice_id, subscription_id, amount, status, created_at)
-     VALUES (?, ?, ?, ?, FROM_UNIXTIME(?))`,
+            `UPDATE subscriptions
+       SET status='active'
+       WHERE stripe_subscription_id=?`,
+            [invoice.subscription]
+        );
+
+        await db.query(
+            `INSERT INTO invoices
+       (stripe_invoice_id, subscription_id, amount, status, created_at)
+       VALUES (?, ?, ?, ?, FROM_UNIXTIME(?))`,
             [
                 invoice.id,
                 invoice.subscription,
@@ -188,20 +135,17 @@ export const stripeWebhook = async (req, res) => {
                 invoice.created,
             ]
         );
-
-        // 🔔 Firebase notification can be triggered here
-        // update DB
-        // send Firebase push
     }
+
+    // 🔹 PAYMENT FAILURE
     if (event.type === 'invoice.payment_failed') {
         const invoice = event.data.object;
 
-        // Grace period: 7 days
         await db.query(
             `UPDATE subscriptions
-     SET status='past_due',
-         grace_until = DATE_ADD(NOW(), INTERVAL 7 DAY)
-     WHERE stripe_subscription_id=?`,
+       SET status='past_due',
+           grace_until = DATE_ADD(NOW(), INTERVAL 7 DAY)
+       WHERE stripe_subscription_id=?`,
             [invoice.subscription]
         );
     }
@@ -226,31 +170,58 @@ export const showCheckout = (req, res) => {
 };
 
 export const createPaymentIntent = async (req, res) => {
-    const { amount } = req.body;
+    try {
+        const { amount, userId, purpose } = req.body;
 
-    const paymentIntent = await stripe.paymentIntents.create({
-        amount: amount * 100, // INR → paise
-        currency: 'inr',
-        automatic_payment_methods: { enabled: true },
-    });
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: amount * 100,
+            currency: 'inr',
+            automatic_payment_methods: { enabled: true },
+            metadata: {
+                userId,
+                purpose, // order / wallet / subscription_setup
+            },
+        });
 
-    res.json({
-        clientSecret: paymentIntent.client_secret,
-    });
+        // 🔴 IMPORTANT: Save intent in DB
+        await db.query(
+            `INSERT INTO payments 
+         (user_id, stripe_payment_intent_id, amount, status)
+         VALUES (?, ?, ?, 'pending')`,
+            [userId, paymentIntent.id, amount]
+        );
+
+        res.json({
+            clientSecret: paymentIntent.client_secret,
+        });
+    } catch (error) {
+        console.error('Error in createPaymentIntent:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
 };
 
 export const paymentSuccess = (req, res) => {
-    res.render('success');
+    res.render('success', {
+        message: 'Payment received. Verifying...',
+    });
 };
 
 export const getInvoices = async (req, res) => {
-    const [rows] = await db.query(
-        `SELECT i.amount, i.status, i.created_at
-     FROM invoices i
-     JOIN subscriptions s ON s.stripe_subscription_id = i.subscription_id
-     WHERE s.user_id = ?`,
-        [req.params.userId]
-    );
+    try {
+        // if (req.user.id !== Number(req.params.userId)) {
+        //     return res.status(403).json({ message: 'Forbidden' });
+        // }
+        const [rows] = await db.query(
+            `SELECT i.amount, i.status, i.created_at
+         FROM invoices i
+         JOIN subscriptions s ON s.stripe_subscription_id = i.subscription_id
+         WHERE s.user_id = ?`,
+            [req.params.userId]
+        );
 
-    res.json(rows);
+        res.json(rows);
+    } catch (error) {
+        console.error('Error in getInvoices:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
 };
