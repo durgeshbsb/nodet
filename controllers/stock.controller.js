@@ -1,3 +1,6 @@
+import fetch from "node-fetch";
+import * as cheerio from "cheerio";
+
 // export const getResult = async (req, res) => {
 //     try {
 
@@ -216,6 +219,107 @@ ${text}
         });
     }
 };
+
+export const analyzeNewsBatch = async (req, res) => {
+    try {
+        const { page = 1, limit = 5, date } = req.body;
+
+        // 1️⃣ Fetch news list
+        const listRes = await fetch("https://app1.whalesbook1.shop/published-news-collection/v2/free", {
+            method: "POST",
+            headers: {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Origin": "https://www.whalesbook.com",
+                "Referer": "https://www.whalesbook.com"
+            },
+            body: JSON.stringify({ date, page, limit, sector: "All", language: "English" })
+        });
+
+        const listData = await listRes.json();
+        const newsItems = listData?.data || [];
+
+        if (!newsItems.length) {
+            return res.json({ success: true, result: { Error: "HOLD - No news found for the given date/page." } });
+        }
+
+        // 2️⃣ Fetch detailed news content for each news item
+        const newsContents = await Promise.all(newsItems.map(async (item) => {
+            const url = `https://www.whalesbook.com/news/English/${item.newsType.toLowerCase().replace(/\s+/g, "-")}/${slugify(item.headline)}/${item._id}`;
+            try {
+                const htmlRes = await fetch(url, {
+                    headers: { "accept": "*/*", "referer": "https://www.whalesbook.com/all-news/English/All" }
+                });
+                const html = await htmlRes.text();
+
+                const $ = cheerio.load(html);
+                const content = $(".main-content-area").text().trim();
+
+                return { title: item.headline, content };
+            } catch (err) {
+                return { title: item.headline, content: "" };
+            }
+        }));
+
+        function slugify(str) {
+            return str
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/(^-|-$)/g, "");
+        }
+
+        // Filter out empty content
+        const validNews = newsContents.filter(n => n.content.length > 0);
+        if (!validNews.length) {
+            return res.json({ success: true, result: { Error: "HOLD - No news content available for analysis." } });
+        }
+
+        // 3️⃣ Prepare Hugging Face prompt
+        const prompt = `
+You are a stock market analyst.
+
+For the following news articles, identify all mentioned companies.
+For each company, decide BUY, SELL, or HOLD and give a one-sentence reason.
+Respond ONLY in JSON format:
+{
+  "Company Name": "BUY/HOLD/SELL - reason"
+}
+
+News:
+${validNews.map(n => `Title: ${n.title}\n${n.content}`).join("\n\n")}
+`;
+
+        // 4️⃣ Call Hugging Face API
+        const hfRes = await fetch("https://router.huggingface.co/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${process.env.HF_API_KEY}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                model: "deepseek-ai/DeepSeek-R1:novita",
+                messages: [{ role: "user", content: prompt }],
+                stream: false
+            })
+        });
+
+        const hfData = await hfRes.json();
+        let output = hfData?.choices?.[0]?.message?.content || "";
+
+        // Clean code block if present
+        output = output.replace(/```json/g, "").replace(/```/g, "").trim();
+
+        let resultJson = {};
+        try { resultJson = JSON.parse(output); }
+        catch { resultJson = { raw: output }; }
+
+        res.json({ success: true, result: resultJson });
+
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
 
 /*
 

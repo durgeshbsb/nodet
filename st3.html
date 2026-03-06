@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Stock News AI Analyzer</title>
+
+    <style>
+        body {
+            font-family: Arial;
+            background: #f4f6f9;
+            padding: 20px;
+        }
+
+        input {
+            padding: 6px;
+            margin-right: 10px;
+        }
+
+        button {
+            padding: 8px 16px;
+            cursor: pointer;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 10px;
+        }
+
+        .buy {
+            color: green;
+            font-weight: bold;
+        }
+
+        .sell {
+            color: red;
+            font-weight: bold;
+        }
+
+        .hold {
+            color: orange;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>Stock News Analyzer</h2>
+
+    <label>Date:</label>
+    <input type="date" id="date">
+
+    <label>Page:</label>
+    <input type="number" id="page" value="1">
+
+    <label>Limit:</label>
+    <input type="number" id="limit" value="5">
+
+    <button onclick="loadNews()">Analyze</button>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Company</th>
+                <th>Signal</th>
+            </tr>
+        </thead>
+
+        <tbody id="tableBody"></tbody>
+    </table>
+
+    <script>
+        async function loadNews() {
+
+            const date = document.getElementById("date").value
+            const page = document.getElementById("page").value
+            const limit = document.getElementById("limit").value
+
+            const tableBody = document.getElementById("tableBody")
+            tableBody.innerHTML = "<tr><td colspan='2'>Loading...</td></tr>"
+
+            try {
+                const res = await fetch("http://localhost:3000/api/stocks/analyse", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ page: Number(page), limit: Number(limit), date })
+                })
+
+                const data = await res.json()
+                tableBody.innerHTML = ""
+
+                if (!data.success) {
+                    tableBody.innerHTML = `<tr><td colspan="2">Error: ${data.message}</td></tr>`
+                    return
+                }
+
+                // New format: data.result = { "Company": "BUY/HOLD/SELL - reason", ... }
+                for (const [company, verdict] of Object.entries(data.result)) {
+                    const signal = verdict.split("-")[0].trim() // BUY / SELL / HOLD
+                    let cls = "hold"
+                    if (signal.toLowerCase() === "buy") cls = "buy"
+                    if (signal.toLowerCase() === "sell") cls = "sell"
+
+                    const tr = document.createElement("tr")
+                    tr.innerHTML = `<td>${company}</td><td class="${cls}">${verdict}</td>`
+                    tableBody.appendChild(tr)
+                }
+
+            } catch (e) {
+                tableBody.innerHTML = `<tr><td colspan="2">Error: ${e.message}</td></tr>`
+            }
+        }
+    </script>
+
+</body>
+
+</html>
